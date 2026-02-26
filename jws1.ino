@@ -1,6 +1,15 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <EEPROM.h>
 
+struct MyData {
+  float lat;
+  float lon;
+  int tz;
+  char iht[40];    // simpan string ihtiati "0,8,2,-4,5,3,6,5"
+  char alarm[6];   // Simpan string alarm "HH:MM"
+};
+MyData storage;
 char namaWifi[] = "JWS-Setting-Jam";
 char password[] = "12345678";
 
@@ -234,6 +243,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 </body>
 
 <script>
+    // 1. Fungsi Jam Digital
     function updateClock(){
         let now = new Date();
         let h = String(now.getHours()).padStart(2,'0');
@@ -249,6 +259,38 @@ const char index_html[] PROGMEM = R"rawliteral(
     setInterval(updateClock, 1000);
     updateClock();
 
+    // 2. Fungsi Ambil Data dari ESP (Agar saat reload data tetap muncul)
+    function loadDataFromServer() {
+        fetch("/getData")
+        .then(r => r.json())
+        .then(data => {
+            // Isi Latitude, Longitude, & Timezone
+            // Kita gunakan selector yang lebih spesifik agar akurat
+            document.querySelectorAll(".grid-2-col input")[0].value = data.lat || "";
+            document.querySelectorAll(".grid-2-col input")[1].value = data.lon || "";
+            document.querySelector("input[placeholder='timzone x 60']").value = data.tz || "";
+            
+            // Isi Alarm
+            if(data.alarm) {
+                document.querySelector("input[type='time']").value = data.alarm;
+            }
+
+            // Isi Ihtiati (Koreksi Waktu)
+            if(data.iht) {
+                let ihtArray = data.iht.split(",");
+                let ihtInputs = document.querySelectorAll(".offset-item input");
+                ihtArray.forEach((val, index) => {
+                    if(ihtInputs[index]) ihtInputs[index].value = val;
+                });
+            }
+            document.getElementById("status-log").innerHTML = "Data berhasil disinkronkan ✅";
+        })
+        .catch(err => {
+            console.log("Gagal sinkronisasi atau data belum ada di ESP.");
+        });
+    }
+
+    // 3. Fungsi Set RTC (Waktu HP ke ESP)
     function setRTC(){
         let n = new Date();
         let t = n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,'0')+"-"+String(n.getDate()).padStart(2,'0')+" "+
@@ -260,48 +302,54 @@ const char index_html[] PROGMEM = R"rawliteral(
         .catch(err => { document.getElementById("status-log").innerHTML = "Gagal RTC ❌"; });
     }
 
+    // 4. Logika Utama Event Listener
     document.addEventListener("DOMContentLoaded", function(){
+        // Jalankan ambil data saat halaman dibuka
+        loadDataFromServer();
+
         let btnUpdate = document.querySelector(".updateDate");
         if(btnUpdate) btnUpdate.onclick = setRTC;
 
-        // --- LOGIKA TOMBOL SAVE ---
+        // --- TOMBOL SAVE (SIMPAN KOORDINAT & IHTIATI) ---
         const btnSave = document.getElementById("save-date");
         btnSave.onclick = function() {
-            // 1. Ambil Data Koordinat & Timezone
-            const lat = document.querySelector("input[value='-7.258163']").value; // Sebaiknya beri ID pada input agar lebih akurat
-            const lon = document.querySelector("input[value='107.843739']").value;
+            const lat = document.querySelectorAll(".grid-2-col input")[0].value;
+            const lon = document.querySelectorAll(".grid-2-col input")[1].value;
             const tz = document.querySelector("input[placeholder='timzone x 60']").value;
 
-            // 2. Ambil Data Ihtiati (Urutan sesuai di HTML)
             const offsets = document.querySelectorAll(".offset-item input");
             const ihtiati = Array.from(offsets).map(input => input.value).join(",");
 
-            // 3. Susun URL
-            // Format: /saveData?lat=-7.25&lon=107.8&tz=420&iht=0,8,2,-4,5,3,6,5
             const url = `/saveData?lat=${lat}&lon=${lon}&tz=${tz}&iht=${ihtiati}`;
-
             document.getElementById("status-log").innerHTML = "Menyimpan data...";
 
             fetch(url)
             .then(r => r.text())
             .then(msg => {
-                document.getElementById("status-log").innerHTML = "Data Tersimpan ke EEPROM ✅";
+                document.getElementById("status-log").innerHTML = "Data Tersimpan ke ESP ✅";
             })
             .catch(err => {
                 document.getElementById("status-log").innerHTML = "Gagal Simpan ❌";
             });
         };
 
-        // --- LOGIKA TOMBOL ALARM ---
+        // --- TOMBOL SET ALARM ---
         const btnAlarm = document.getElementById("alarm-set");
         const inputAlarm = document.querySelector("input[type='time']");
         if(btnAlarm) {
             btnAlarm.onclick = function() {
                 let timeVal = inputAlarm.value;
                 if(!timeVal) return alert("Isi Jam!");
+                
+                document.getElementById("status-log").innerHTML = "Menyetel Alarm...";
                 fetch("/setAlarm?time=" + timeVal)
                 .then(r => r.text())
-                .then(msg => { document.getElementById("status-log").innerHTML = "Alarm Set: " + timeVal + " ✅"; });
+                .then(msg => { 
+                    document.getElementById("status-log").innerHTML = "Alarm Set: " + timeVal + " ✅"; 
+                })
+                .catch(err => {
+                    document.getElementById("status-log").innerHTML = "Gagal Set Alarm ❌";
+                });
             };
         }
     });
@@ -309,83 +357,105 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// Fungsi untuk menangani data yang masuk dari tombol Update
-void handleSetTime() {
-  // Cek apakah ada parameter bernama "time" (sesuai kode JS Anda)
-  if (server.hasArg("time")) {
-    String waktuHP = server.arg("time");
-    
-    // Tampilkan ke Serial Monitor
-    Serial.println("");
-    Serial.println(">>> DATA DITERIMA DARI WEB <<<");
-    Serial.print("Waktu HP: ");
-    Serial.println(waktuHP); 
-    Serial.println("------------------------------");
-    
-    // Kirim balasan ke Web agar status-log berubah menjadi sukses
-    server.send(200, "text/plain", "OK");
-  } else {
-    server.send(400, "text/plain", "Gagal: Parameter tidak ditemukan");
-  }
-}
-void handleSetAlarm() {
-  if (server.hasArg("time")) {
-    String alarmTime = server.arg("time");
-    
-    Serial.println("===============================");
-    Serial.print("ALARM BARU DITERIMA: ");
-    Serial.println(alarmTime); // Akan muncul jam format HH:MM
-    Serial.println("===============================");
-    
-    server.send(200, "text/plain", "Alarm diterima: " + alarmTime);
-    
-    // Tips: Kamu bisa memecah string jam dan menit di sini
-    // int jam = alarmTime.substring(0, 2).toInt();
-    // int menit = alarmTime.substring(3, 5).toInt();
-  } else {
-    server.send(400, "text/plain", "Gagal: Data waktu tidak ada");
-  }
-}
 void handleSaveData() {
-  String lat = server.arg("lat");
-  String lon = server.arg("lon");
-  String tz  = server.arg("tz");
-  String iht = server.arg("iht"); // Ini berisi data: 0,8,2,-4,5,3,6,5
+  // 1. Ambil data dari web dan masukkan ke struct
+  storage.lat = server.arg("lat").toFloat();
+  storage.lon = server.arg("lon").toFloat();
+  storage.tz  = server.arg("tz").toInt(); // Data timezone diambil di sini
+  
+  // Simpan string ihtiati ke struct
+  String ihtVal = server.arg("iht");
+  ihtVal.toCharArray(storage.iht, 40);
 
-  Serial.println("======= DATA BARU DITERIMA =======");
-  Serial.println("Latitude  : " + lat);
-  Serial.println("Longitude : " + lon);
-  Serial.println("Timezone  : " + tz);
-  Serial.println("Ihtiati   : " + iht);
-  Serial.println("==================================");
+  // 2. Tampilkan di Serial untuk pengecekan
+  Serial.println("======= SIMPAN KE EEPROM =======");
+  Serial.println("Lat      : " + String(storage.lat, 6));
+  Serial.println("Lon      : " + String(storage.lon, 6));
+  Serial.println("Timezone : " + String(storage.tz)); // Tambahkan baris ini
+  Serial.println("Iht      : " + String(storage.iht));
+  Serial.println("================================");
+  
+  // 3. Tulis permanen ke EEPROM
+  EEPROM.put(0, storage);
+  EEPROM.commit(); 
 
   server.send(200, "text/plain", "OK");
 }
 
-void setup() {
-  Serial.begin(115200); // Gunakan baudrate 115200 di Serial Monitor
+void handleSetAlarm() {
+  if (server.hasArg("time")) {
+    String alarmTime = server.arg("time");
+    
+    // Simpan ke struct
+    alarmTime.toCharArray(storage.alarm, 6);
+    
+    // Simpan permanen ke EEPROM
+    EEPROM.put(0, storage);
+    EEPROM.commit();
+
+    Serial.println("Alarm disimpan ke EEPROM: " + alarmTime);
+    server.send(200, "text/plain", "Alarm OK");
+  }
+}
+
+void handleGetData() {
+  // Fungsi ini membaca apa yang ada di struct storage sekarang
+  String json = "{";
+  json += "\"lat\":\"" + String(storage.lat, 6) + "\",";
+  json += "\"lon\":\"" + String(storage.lon, 6) + "\",";
+  json += "\"tz\":\"" + String(storage.tz) + "\",";
+  json += "\"iht\":\"" + String(storage.iht) + "\",";
+  json += "\"alarm\":\"" + String(storage.alarm) + "\"";
+  json += "}";
   
+  server.send(200, "application/json", json);
+}
+
+void handleSetTime() {
+  if (server.hasArg("time")) {
+    String waktuHP = server.arg("time");
+    Serial.println("Waktu RTC di-update: " + waktuHP);
+    // (Tambahkan kode setting RTC DS3231 Anda di sini)
+    server.send(200, "text/plain", "OK");
+  }
+}
+void setup() {
+  Serial.begin(115200);
+  
+  // --- BAGIAN PENTING: EEPROM ---
+  EEPROM.begin(512); // Inisialisasi memori
+  EEPROM.get(0, storage); // Ambil data yang tersimpan di alamat 0 ke struct storage
+
+  // Cek jika data Latitude kosong (berarti EEPROM baru pertama kali dipakai)
+  // Berikan nilai default agar tidak error
+  if (isnan(storage.lat) || storage.lat == 0) {
+    storage.lat = -7.258163;
+    storage.lon = 107.843739;
+    storage.tz = 420;
+    strcpy(storage.iht, "0,8,2,-4,5,3,6,5");
+    strcpy(storage.alarm, "00:00");
+  } else {
+    Serial.println("Data EEPROM dimuat!");
+    Serial.print("Alarm tersimpan: ");
+    Serial.println(storage.alarm);
+  }
+  // -------------------------------
+
   WiFi.softAP(namaWifi, password);
   
-  Serial.println("");
-  Serial.print("WiFi Aktif: ");
-  Serial.println(namaWifi);
-  Serial.print("Buka browser ke IP: ");
-  Serial.println(WiFi.softAPIP());
-
   // Halaman Utama
   server.on("/", []() {
     server.send(200, "text/html", index_html);
   });
 
-  // Endpoint untuk menangkap data waktu
+  // Endpoint
   server.on("/setTime", handleSetTime);
   server.on("/setAlarm", handleSetAlarm);
   server.on("/saveData", handleSaveData);
+  server.on("/getData", handleGetData);
 
   server.begin();
 }
-
 void loop() {
   server.handleClient();
 }
