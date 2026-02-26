@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JWS Controller Pro - Final</title>
+    <style>
+        :root {
+            --primary: #00ff88;
+            --bg: #121212;
+            --card: #1e1e1e;
+            --input-bg: #2d2d2d;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg);
+            color: white;
+            display: flex;
+            justify-content: center;
+            padding: 15px;
+            margin: 0;
+        }
+
+        .container {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box; /* Mencegah elemen keluar card */
+        }
+
+        /* HEADER: Jam & Update */
+        .header-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
+        }
+
+        #clock {
+            font-size: 2.2rem;
+            font-weight: bold;
+            color: var(--primary);
+            line-height: 1;
+        }
+
+        #date {
+            font-size: 0.85rem;
+            color: #bbb;
+            margin-top: 5px;
+        }
+
+        .updateDate {
+            background: transparent;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            white-space: nowrap;
+        }
+
+        .updateDate:active { transform: scale(0.95); }
+
+        /* SECTION TITLES */
+        .section-title {
+            font-size: 0.8rem;
+            color: var(--primary);
+            margin: 15px 0 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::before {
+            content: "";
+            width: 3px;
+            height: 12px;
+            background: var(--primary);
+            margin-right: 8px;
+        }
+
+        /* INPUT GENERAL */
+        input {
+            background: var(--input-bg);
+            border: 1px solid transparent;
+            padding: 10px;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.9rem;
+            outline: none;
+            width: 100%;
+            box-sizing: border-box; /* Kunci agar tidak keluar card */
+        }
+
+        input:focus { border-color: var(--primary); }
+
+        /* KOORDINAT GRID */
+        .grid-2-col {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr)); /* Mencegah overflow */
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
+
+        /* OFFSET GRID (2x4) */
+        .offset-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .offset-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--input-bg);
+            padding: 6px 10px;
+            border-radius: 8px;
+        }
+
+        .offset-item label { margin: 0; font-weight: bold; color: #ddd; }
+        .offset-item input {
+            width: 40px;
+            padding: 2px;
+            text-align: right;
+            background: transparent;
+            color: var(--primary);
+            border: none;
+        }
+
+        /* ALARM SETUP: Horizontal */
+        .alarm-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .alarm-row input[type="time"] { flex: 1; }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            white-space: nowrap;
+        }
+
+        .btn-save {
+            background: var(--primary);
+            color: #121212;
+        }
+
+        .btn-full {
+            width: 100%;
+            margin-top: 15px;
+            background: linear-gradient(45deg, #00ff88, #00ccff);
+        }
+
+        .btn-stop {
+            background: #ff4757;
+            color: white;
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        #status-log {
+            font-size: 0.75rem;
+            color: #f1c40f;
+            text-align: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-wrapper">
+        <div class="content-waktu">
+            <div id="clock">00:00:00</div>
+            <div id="date">Memuat waktu...</div>
+        </div>
+        <div class="updateDate" onclick="manualSync()">Update</div>
+    </div>
+
+    <div class="section-title">Koordinat & Lokasi</div>
+    <div class="grid-2-col">
+        <div class="input-group">
+            <label>Latitude</label>
+            <input type="text" id="lat" value="-7.258163">
+        </div>
+        <div class="input-group">
+            <label>Longitude</label>
+            <input type="text" id="lng" value="107.843739">
+        </div>
+    </div>
+    <div class="input-group" style="margin-bottom: 15px;">
+        <label>Timezone Offset (Menit)</label>
+        <input type="number" id="tz" value="420">
+    </div>
+
+    <div class="section-title">Ihtiati / Offset (Menit)</div>
+    <div class="offset-grid" id="offsetContainer"></div>
+
+    <div class="section-title">Alarm Setup</div>
+    <div class="alarm-row">
+        <input type="time" id="alarmTime">
+        <button class="btn btn-save" onclick="updateAlarm()">Set Alarm</button>
+    </div>
+
+    <button class="btn btn-full" onclick="saveAll()">Simpan Parameter JWS</button>
+    <button id="stopBtn" class="btn btn-stop" onclick="stopAlarm()">MATIKAN ALARM!</button>
+    
+    <div id="status-log">Siap menerima perintah.</div>
+</div>
+
+<audio id="alarmAudio" loop>
+    <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+    const labels = ["Imsak", "Subuh", "Terbit", "Dzuhur", "Ashar", "Maghrib", "Isya", "Extra"];
+    const values = [0, 8, 2, -4, 5, 3, 6, 5];
+    let activeAlarm = null;
+    const audio = document.getElementById('alarmAudio');
+
+    // Render Offset 2x4
+    const container = document.getElementById('offsetContainer');
+    labels.forEach((l, i) => {
+        container.innerHTML += `<div class="offset-item"><label>${l}</label><input type="number" class="off-val" value="${values[i]}"></div>`;
+    });
+
+    function updateTime() {
+        const now = new Date();
+        const h = now.getHours().toString().padStart(2, '0');
+        const m = now.getMinutes().toString().padStart(2, '0');
+        const s = now.getSeconds().toString().padStart(2, '0');
+        document.getElementById('clock').innerText = `${h}.${m}.${s}`;
+        document.getElementById('date').innerText = now.toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+
+        if (activeAlarm === `${h}:${m}`) { playAlarm(); }
+    }
+
+    function manualSync() {
+        updateTime();
+        document.getElementById('status-log').innerText = "✅ Sinkron Berhasil!";
+    }
+
+    function updateAlarm() {
+        activeAlarm = document.getElementById('alarmTime').value;
+        if(activeAlarm) {
+            document.getElementById('status-log').innerText = "⏰ Alarm disetel: " + activeAlarm;
+            alert("Alarm aktif pada jam " + activeAlarm);
+        }
+    }
+
+    function saveAll() {
+        const offVals = Array.from(document.querySelectorAll('.off-val')).map(el => el.value);
+        console.log(`PrayerTimes pt(${document.getElementById('lat').value}, ${document.getElementById('lng').value}, ${document.getElementById('tz').value});`);
+        console.log(`int offset[8] = {${offVals.join(', ')}};`);
+        document.getElementById('status-log').innerText = "Parameter Tersimpan!";
+        alert("Seluruh parameter telah disimpan.");
+    }
+
+    function playAlarm() {
+        audio.play();
+        document.getElementById('stopBtn').style.display = 'block';
+    }
+
+    function stopAlarm() {
+        audio.pause(); audio.currentTime = 0;
+        activeAlarm = null;
+        document.getElementById('stopBtn').style.display = 'none';
+        document.getElementById('status-log').innerText = "Alarm dihentikan.";
+    }
+
+    setInterval(updateTime, 1000);
+    updateTime();
+</script>
+
+</body>
+</html>
