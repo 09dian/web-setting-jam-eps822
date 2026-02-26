@@ -1,3 +1,13 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+
+char namaWifi[] = "JWS-Setting-Jam";
+char password[] = "12345678";
+
+ESP8266WebServer server(80);
+
+// Paste kode HTML asli Anda di sini tanpa perubahan
+const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -297,3 +307,85 @@
     });
 </script>
 </html>
+)rawliteral";
+
+// Fungsi untuk menangani data yang masuk dari tombol Update
+void handleSetTime() {
+  // Cek apakah ada parameter bernama "time" (sesuai kode JS Anda)
+  if (server.hasArg("time")) {
+    String waktuHP = server.arg("time");
+    
+    // Tampilkan ke Serial Monitor
+    Serial.println("");
+    Serial.println(">>> DATA DITERIMA DARI WEB <<<");
+    Serial.print("Waktu HP: ");
+    Serial.println(waktuHP); 
+    Serial.println("------------------------------");
+    
+    // Kirim balasan ke Web agar status-log berubah menjadi sukses
+    server.send(200, "text/plain", "OK");
+  } else {
+    server.send(400, "text/plain", "Gagal: Parameter tidak ditemukan");
+  }
+}
+void handleSetAlarm() {
+  if (server.hasArg("time")) {
+    String alarmTime = server.arg("time");
+    
+    Serial.println("===============================");
+    Serial.print("ALARM BARU DITERIMA: ");
+    Serial.println(alarmTime); // Akan muncul jam format HH:MM
+    Serial.println("===============================");
+    
+    server.send(200, "text/plain", "Alarm diterima: " + alarmTime);
+    
+    // Tips: Kamu bisa memecah string jam dan menit di sini
+    // int jam = alarmTime.substring(0, 2).toInt();
+    // int menit = alarmTime.substring(3, 5).toInt();
+  } else {
+    server.send(400, "text/plain", "Gagal: Data waktu tidak ada");
+  }
+}
+void handleSaveData() {
+  String lat = server.arg("lat");
+  String lon = server.arg("lon");
+  String tz  = server.arg("tz");
+  String iht = server.arg("iht"); // Ini berisi data: 0,8,2,-4,5,3,6,5
+
+  Serial.println("======= DATA BARU DITERIMA =======");
+  Serial.println("Latitude  : " + lat);
+  Serial.println("Longitude : " + lon);
+  Serial.println("Timezone  : " + tz);
+  Serial.println("Ihtiati   : " + iht);
+  Serial.println("==================================");
+
+  server.send(200, "text/plain", "OK");
+}
+
+void setup() {
+  Serial.begin(115200); // Gunakan baudrate 115200 di Serial Monitor
+  
+  WiFi.softAP(namaWifi, password);
+  
+  Serial.println("");
+  Serial.print("WiFi Aktif: ");
+  Serial.println(namaWifi);
+  Serial.print("Buka browser ke IP: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Halaman Utama
+  server.on("/", []() {
+    server.send(200, "text/html", index_html);
+  });
+
+  // Endpoint untuk menangkap data waktu
+  server.on("/setTime", handleSetTime);
+  server.on("/setAlarm", handleSetAlarm);
+  server.on("/saveData", handleSaveData);
+
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
